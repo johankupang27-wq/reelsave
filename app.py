@@ -198,7 +198,18 @@ placeholder="https://www.facebook.com/reel/..."
 required
 autocomplete="off">
 
-<button type="submit">⬇ Download Reel</button>
+<div style="margin:16px 0;text-align:left;">
+<label for="format"><strong>Format download</strong></label>
+<select
+name="format"
+id="format"
+style="width:100%;padding:12px;margin-top:8px;border-radius:10px;border:1px solid #ccc;font-size:16px;">
+<option value="mp4">🎬 MP4 — Video</option>
+<option value="mp3">🎵 MP3 — Audio</option>
+</select>
+</div>
+
+<button type="submit">⬇ Download</button>
 
 </form>
 
@@ -351,6 +362,17 @@ def home():
 def download():
 
     url = request.form.get("url", "").strip()
+    download_format = request.form.get("format", "mp4").strip().lower()
+    if download_format not in {"mp4", "mp3"}:
+        return page(
+            "Format tidak valid",
+            "Format download yang dipilih tidak valid.",
+            "Format Tidak Valid",
+            """
+            <p>Silakan pilih MP4 atau MP3.</p>
+            <p><a href="/">← Kembali ke ReelSave</a></p>
+            """
+        ), 400
 
     if not url:
         return page(
@@ -389,12 +411,33 @@ def download():
             """
         ), 400
 
-    filename = f"/tmp/reelsave-{uuid.uuid4().hex}.mp4"
+    base_filename = f"/tmp/reelsave-{uuid.uuid4().hex}"
+
+    if download_format == "mp3":
+        filename = base_filename + ".mp3"
+    else:
+        filename = base_filename + ".mp4"
 
     try:
 
-        subprocess.run(
-            [
+        if download_format == "mp3":
+            command = [
+                "yt-dlp",
+                "--no-playlist",
+                "--no-part",
+                "-f",
+                "bestaudio/best",
+                "-x",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "192K",
+                "-o",
+                base_filename + ".%(ext)s",
+                url
+            ]
+        else:
+            command = [
                 "yt-dlp",
                 "--no-playlist",
                 "--no-part",
@@ -403,7 +446,10 @@ def download():
                 "-o",
                 filename,
                 url
-            ],
+            ]
+
+        subprocess.run(
+            command,
             check=True,
             timeout=120,
             stdout=subprocess.DEVNULL,
@@ -414,11 +460,11 @@ def download():
         if not os.path.exists(filename):
             return page(
                 "Download gagal",
-                "Video tidak berhasil dibuat.",
+                "File tidak berhasil dibuat.",
                 "Download Gagal",
                 """
                 <p>
-                Video tidak berhasil diproses.
+                File tidak berhasil diproses.
                 Pastikan Reel dapat diakses secara publik.
                 </p>
 
@@ -426,12 +472,20 @@ def download():
                 """
             ), 500
 
-        response = send_file(
-            filename,
-            as_attachment=True,
-            download_name="reelsave-video.mp4",
-            mimetype="video/mp4"
-        )
+        if download_format == "mp3":
+            response = send_file(
+                filename,
+                as_attachment=True,
+                download_name="reelsave-audio.mp3",
+                mimetype="audio/mpeg"
+            )
+        else:
+            response = send_file(
+                filename,
+                as_attachment=True,
+                download_name="reelsave-video.mp4",
+                mimetype="video/mp4"
+            )
 
         @response.call_on_close
         def cleanup():
